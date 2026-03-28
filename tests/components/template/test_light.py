@@ -841,6 +841,42 @@ async def test_temperature_template(
 
 @pytest.mark.parametrize(("count", "extra_config"), [(1, ON_OFF_COLOR_TEMP_ACTIONS)])
 @pytest.mark.parametrize(
+    ("style", "attribute"),
+    [
+        (ConfigurationStyle.MODERN, "temperature_kelvin"),
+        (ConfigurationStyle.TRIGGER, "temperature_kelvin"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("expected_temp", "attribute_template", "expected_color_mode"),
+    [
+        (4000, "{{4000}}", ColorMode.COLOR_TEMP),
+        (None, "{{10000}}", ColorMode.COLOR_TEMP),
+        (None, "{{x - 12}}", ColorMode.COLOR_TEMP),
+        (None, "None", ColorMode.COLOR_TEMP),
+        (None, "{{ none }}", ColorMode.COLOR_TEMP),
+        (None, "", ColorMode.COLOR_TEMP),
+        (None, "{{ 'one' }}", ColorMode.COLOR_TEMP),
+    ],
+)
+@pytest.mark.usefixtures("setup_single_attribute_light")
+async def test_temperature_kelvin_template(
+    hass: HomeAssistant,
+    expected_temp: Any,
+    expected_color_mode: ColorMode,
+) -> None:
+    """Test the template for the temperature in Kelvin."""
+    await async_trigger(hass, TEST_STATE_ENTITY_ID, STATE_ON)
+    state = hass.states.get(TEST_LIGHT.entity_id)
+    assert state.attributes.get("color_temp_kelvin") == expected_temp
+    assert state.state == STATE_ON
+    assert state.attributes.get("color_mode") == expected_color_mode
+    assert state.attributes["supported_color_modes"] == [ColorMode.COLOR_TEMP]
+    assert state.attributes["supported_features"] == 0
+
+
+@pytest.mark.parametrize(("count", "extra_config"), [(1, ON_OFF_COLOR_TEMP_ACTIONS)])
+@pytest.mark.parametrize(
     "style",
     [
         ConfigurationStyle.LEGACY,

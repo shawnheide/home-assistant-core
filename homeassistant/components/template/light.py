@@ -102,6 +102,7 @@ CONF_SUPPORTS_TRANSITION_TEMPLATE = "supports_transition_template"
 CONF_TEMPERATURE_ACTION = "set_temperature"
 CONF_TEMPERATURE = "temperature"
 CONF_TEMPERATURE_TEMPLATE = "temperature_template"
+CONF_TEMPERATURE_KELVIN = "temperature_kelvin"
 CONF_WHITE_VALUE_ACTION = "set_white_value"
 CONF_WHITE_VALUE = "white_value"
 CONF_WHITE_VALUE_TEMPLATE = "white_value_template"
@@ -163,7 +164,8 @@ LIGHT_COMMON_SCHEMA = vol.Schema(
         vol.Optional(CONF_STATE): cv.template,
         vol.Optional(CONF_SUPPORTS_TRANSITION): cv.template,
         vol.Optional(CONF_TEMPERATURE_ACTION): cv.SCRIPT_SCHEMA,
-        vol.Optional(CONF_TEMPERATURE): cv.template,
+        vol.Exclusive(CONF_TEMPERATURE, "temperature"): cv.template,
+        vol.Exclusive(CONF_TEMPERATURE_KELVIN, "temperature"): cv.template,
     }
 )
 
@@ -378,11 +380,19 @@ class AbstractTemplateLight(AbstractTemplateEntity, LightEntity):
             template_validators.number(self, CONF_LEVEL, 0, 255, int),
         )
 
-        # Setup Color temperature
+        # Setup Color temperature (mired-based)
         self.setup_template(
             CONF_TEMPERATURE,
             "_attr_color_temp_kelvin",
             self._validate_temperature,
+            self._update_color("_attr_color_temp_kelvin", ColorMode.COLOR_TEMP),
+        )
+
+        # Setup Color temperature (kelvin-based)
+        self.setup_template(
+            CONF_TEMPERATURE_KELVIN,
+            "_attr_color_temp_kelvin",
+            self._validate_temperature_kelvin,
             self._update_color("_attr_color_temp_kelvin", ColorMode.COLOR_TEMP),
         )
 
@@ -524,8 +534,11 @@ class AbstractTemplateLight(AbstractTemplateEntity, LightEntity):
             )
             self._attr_brightness = kwargs[ATTR_BRIGHTNESS]
             optimistic_set = True
-
-        if CONF_TEMPERATURE not in self._templates and ATTR_COLOR_TEMP_KELVIN in kwargs:
+        if (
+            CONF_TEMPERATURE not in self._templates
+            and CONF_TEMPERATURE_KELVIN not in self._templates
+            and ATTR_COLOR_TEMP_KELVIN in kwargs
+        ):
             self._set_optimistic_color(
                 "color temperature",
                 "_attr_color_temp_kelvin",
@@ -534,7 +547,11 @@ class AbstractTemplateLight(AbstractTemplateEntity, LightEntity):
             )
             optimistic_set = True
 
-        if CONF_TEMPERATURE not in self._templates and ATTR_COLOR_TEMP in kwargs:
+        if (
+            CONF_TEMPERATURE not in self._templates
+            and CONF_TEMPERATURE_KELVIN not in self._templates
+            and ATTR_COLOR_TEMP in kwargs
+        ):
             self._set_optimistic_color(
                 "color temperature",
                 "_attr_color_temp_kelvin",
@@ -593,7 +610,6 @@ class AbstractTemplateLight(AbstractTemplateEntity, LightEntity):
         setattr(self, attribute, value)
 
         for option, attr in (
-            (CONF_TEMPERATURE, "_attr_color_temp_kelvin"),
             (CONF_HS, "_attr_hs_color"),
             (CONF_RGB, "_attr_rgb_color"),
             (CONF_RGBW, "_attr_rgbw_color"),
@@ -604,6 +620,13 @@ class AbstractTemplateLight(AbstractTemplateEntity, LightEntity):
 
             if option not in self._templates:
                 setattr(self, attr, None)
+
+        if (
+            attribute != "_attr_color_temp_kelvin"
+            and CONF_TEMPERATURE not in self._templates
+            and CONF_TEMPERATURE_KELVIN not in self._templates
+        ):
+            self._attr_color_temp_kelvin = None
 
     def get_registered_script(self, **kwargs) -> tuple[str, dict]:
         """Get registered script for turn_on."""
@@ -755,6 +778,28 @@ class AbstractTemplateLight(AbstractTemplateEntity, LightEntity):
             CONF_TEMPERATURE,
             result,
             f"expected a number between {min_mireds} and {max_mireds}",
+        )
+        return None
+
+    @callback
+    def _validate_temperature_kelvin(self, result: Any) -> int | None:
+        """Validate the temperature in Kelvin from the template."""
+        if template_validators.check_result_for_none(result):
+            return None
+
+        if (
+            isinstance(result, (int, float))
+            and self._attr_min_color_temp_kelvin
+            <= result
+            <= self._attr_max_color_temp_kelvin
+        ):
+            return int(result)
+
+        template_validators.log_validation_result_error(
+            self,
+            CONF_TEMPERATURE_KELVIN,
+            result,
+            f"expected a number between {self._attr_min_color_temp_kelvin} and {self._attr_max_color_temp_kelvin}",
         )
         return None
 
